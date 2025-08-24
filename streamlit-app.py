@@ -123,6 +123,11 @@ def gemini_reply(model, user_text: str, persona: str = "tutor") -> str:
     if not model:
         return "(AI unavailable: set GOOGLE_API_KEY)"
 
+    # Check if response was stopped
+    if st.session_state.stop_response:
+        st.session_state.stop_response = False
+        return "(Response stopped by user)"
+
     if persona == "roleplay":
         sys = (
             "You are part of a child-friendly roleplay. Use warm, simple sentences (max 2). "
@@ -140,6 +145,11 @@ def gemini_reply(model, user_text: str, persona: str = "tutor") -> str:
 
     try:
         resp = model.generate_content(prompt)
+        # Check again after generation in case user clicked stop during generation
+        if st.session_state.stop_response:
+            st.session_state.stop_response = False
+            return "(Response stopped by user)"
+            
         # Preferred: .text
         if getattr(resp, "text", None):
             return resp.text.strip()
@@ -174,15 +184,32 @@ def maybe_translate(text: str, target_lang: str) -> str:
         return f"[Translation failed] {text}"
 
 
-def speak_gtts(text: str, target_lang: str) -> io.BytesIO:
+def speak_gtts(text: str, target_lang: str) -> bytes:
     lang = LANG_CODE.get(target_lang, "en")
     if not text or not text.strip():
         text = "I didn't hear anything. Please try again."
-    tts = gTTS(text=text, lang=lang)
-    buf = io.BytesIO()
-    tts.write_to_fp(buf)
-    buf.seek(0)
-    return buf
+    
+    # Create a cache key for this text/language combination
+    cache_key = f"{text}_{lang}"
+    
+    # Check if we already have this audio cached
+    if cache_key in st.session_state.audio_cache:
+        return st.session_state.audio_cache[cache_key]
+    
+    try:
+        tts = gTTS(text=text, lang=lang, slow=False)
+        buf = io.BytesIO()
+        tts.write_to_fp(buf)
+        buf.seek(0)
+        audio_bytes = buf.getvalue()
+        
+        # Cache the audio for future use
+        st.session_state.audio_cache[cache_key] = audio_bytes
+        
+        return audio_bytes
+    except Exception as e:
+        st.error(f"TTS Error: {e}")
+        return b""
 
 
 def emoji_feedback(text: str) -> str:
@@ -205,8 +232,6 @@ with st.sidebar:
     st.header("Settings")
     playback_lang = st.selectbox("Playback Language", SUPPORTED_LANGS, index=0)
     mode = st.radio("Mode", ["Free Chat", "Roleplay"], index=0)
-    st.markdown("---")
-    st.caption("Set GOOGLE_API_KEY in env or st.secrets. Set GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON for Speech-to-Text.")
 
 model = init_gemini()
 
@@ -215,6 +240,22 @@ if "rp_step" not in st.session_state:
     st.session_state.rp_step = 0
 if "rp_key" not in st.session_state:
     st.session_state.rp_key = "school"
+
+# Session state for chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+
+# Session state for controlling AI response
+if "stop_response" not in st.session_state:
+    st.session_state.stop_response = False
+
+# Session state for processing audio to prevent duplicate processing
+if "last_audio_processed" not in st.session_state:
+    st.session_state.last_audio_processed = None
+
+# Session state for storing generated audio files
+if "audio_cache" not in st.session_state:
+    st.session_state.audio_cache = {}
 
 recorded_bytes = None
 
@@ -237,21 +278,146 @@ if uploaded is not None and not recorded_bytes:
 # Main logic
 if mode == "Free Chat":
     st.subheader("Ask Genie anything!")
+    
+    # Display chat history
+    chat_container = st.container()
+    with chat_container:
+        for i, message in enumerate(st.session_state.chat_history):
+            if message["role"] == "user":
+                with st.chat_message("user"):
+                    st.write(message["content"])
+                    st.caption(f"Speech: {emoji_feedback(message['content'])}")
+            else:  # genie
+                with st.chat_message("assistant", avatar="🧞‍♂️"):
+                    st.write(message["content"])
+                    st.caption(f"Genie feedback: {emoji_feedback(message['content'])}")
+                    # Display cached audio if available
+                    if "audio" in message and message["audio"]:
+                        st.audio(message["audio"], format="audio/mp3", autoplay=True)
+    
+    # Clear chat button
+    if st.session_state.chat_history:
+        if st.button("🗑️ Clear Chat"):
+            st.session_state.chat_history = []
+            st.session_state.last_audio_processed = None  # Reset audio processing
+            st.rerun()
+    
+    # Add stop button in sidebar for emergency stop
+    with st.sidebar:
+        st.markdown("---")
+        if st.button("🛑 Emergency Stop", help="Stop current AI response", type="secondary"):
+            st.session_state.stop_response = True
+            st.warning("AI response stopped!")
+        
+        # Audio cache management
+        cache_size = len(st.session_state.audio_cache)
+        st.caption(f"Audio cache: {cache_size} items")
+        if cache_size > 0:
+            if st.button("🗑️ Clear Audio Cache", help="Clear cached audio files"):
+                st.session_state.audio_cache = {}
+                st.success("Audio cache cleared!")
+    
+    # Text input chat box
+    with st.form("chat_form", clear_on_submit=True):
+        user_input = st.text_input("💬 Type your message here:", placeholder="Ask Genie anything...")
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            submit_text = st.form_submit_button("Send 📤")
+    
+    # Handle text input
+    if submit_text and user_input.strip():
+        # Reset stop flag
+        st.session_state.stop_response = False
+        
+        # Add user message to chat history
+        st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+
+        # Generate response
+        with st.spinner("🤔 Thinking with Gemini..."):
+            reply = gemini_reply(model, user_input.strip(), persona="tutor")
+        
+        # Add Genie response to chat history only if not stopped
+        if reply != "(Response stopped by user)":
+            # Play audio
+            final_text = maybe_translate(reply, playback_lang)
+            with st.spinner("🔊 Speaking..."):
+                try:
+                    audio_bytes = speak_gtts(final_text, playback_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                        # Store message with audio
+                        st.session_state.chat_history.append({
+                            "role": "genie", 
+                            "content": reply, 
+                            "audio": audio_bytes
+                        })
+                    else:
+                        # Store message without audio
+                        st.session_state.chat_history.append({
+                            "role": "genie", 
+                            "content": reply
+                        })
+                except Exception as e:
+                    st.error(f"Audio generation failed: {e}")
+                    # Store message without audio
+                    st.session_state.chat_history.append({
+                        "role": "genie", 
+                        "content": reply
+                    })
+        
+        # Rerun to refresh chat display
+        st.rerun()
+    
     if recorded_bytes:
-        with st.spinner("Transcribing with Whisper..."):
-            user_text = transcribe_whisper(recorded_bytes, lang_code="en")
-        st.markdown(f"**You said:** {user_text}")
-        st.write(f"Your speech: {emoji_feedback(user_text)}")
+        # Create a unique identifier for this audio to prevent duplicate processing
+        audio_id = hash(recorded_bytes)
+        
+        # Only process if this is new audio
+        if st.session_state.last_audio_processed != audio_id:
+            st.session_state.last_audio_processed = audio_id
+            st.session_state.stop_response = False  # Reset stop flag
+            
+            with st.spinner("🎙️ Transcribing with Whisper..."):
+                user_text = transcribe_whisper(recorded_bytes, lang_code="en")
+            
+            # Add user message to chat history
+            st.session_state.chat_history.append({"role": "user", "content": user_text})
 
-        with st.spinner("Thinking with Gemini..."):
-            reply = gemini_reply(model, user_text, persona="tutor")
-        st.markdown(f"**Genie:** {reply}")
-        st.write(f"Genie feedback: {emoji_feedback(reply)}")
-
-        final_text = maybe_translate(reply, playback_lang)
-        with st.spinner("Speaking..."):
-            mp3 = speak_gtts(final_text, playback_lang)
-        st.audio(mp3, format="audio/mp3")
+            # Generate response
+            with st.spinner("🤔 Thinking with Gemini..."):
+                reply = gemini_reply(model, user_text, persona="tutor")
+            
+            # Add Genie response to chat history only if not stopped
+            if reply != "(Response stopped by user)":
+                # Play audio
+                final_text = maybe_translate(reply, playback_lang)
+                with st.spinner("🔊 Speaking..."):
+                    try:
+                        audio_bytes = speak_gtts(final_text, playback_lang)
+                        if audio_bytes:
+                            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
+                            # Store message with audio
+                            st.session_state.chat_history.append({
+                                "role": "genie", 
+                                "content": reply, 
+                                "audio": audio_bytes
+                            })
+                        else:
+                            # Store message without audio
+                            st.session_state.chat_history.append({
+                                "role": "genie", 
+                                "content": reply
+                            })
+                    except Exception as e:
+                        st.error(f"Audio generation failed: {e}")
+                        # Store message without audio
+                        st.session_state.chat_history.append({
+                            "role": "genie", 
+                            "content": reply
+                        })
+            
+            # Rerun to refresh chat display
+            st.rerun()
     else:
         st.caption("Tap the mic or upload audio to start.")
 
@@ -282,8 +448,9 @@ elif mode == "Roleplay":
 
         if st.button("🔊 Play Prompt"):
             prompt_text = maybe_translate(ai_line, playback_lang)
-            mp3 = speak_gtts(prompt_text, playback_lang)
-            st.audio(mp3, format="audio/mp3")
+            audio_bytes = speak_gtts(prompt_text, playback_lang)
+            if audio_bytes:
+                st.audio(audio_bytes, format="audio/mp3", autoplay=True)
 
 
         if recorded_bytes:
@@ -300,8 +467,9 @@ elif mode == "Roleplay":
                 if st.session_state.rp_step >= len(steps):
                     st.balloons()
                     done_text = maybe_translate("Awesome job! You finished the roleplay!", playback_lang)
-                    mp3 = speak_gtts(done_text, playback_lang)
-                    st.audio(mp3, format="audio/mp3")
+                    audio_bytes = speak_gtts(done_text, playback_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
                     st.session_state.rp_step = 0
             else:
                 st.warning("Almost there! Try one of the hints.")
@@ -312,8 +480,9 @@ elif mode == "Roleplay":
                     )
                     hint = gemini_reply(model, nudge_prompt, persona="roleplay")
                     st.info(hint)
-                    mp3 = speak_gtts(maybe_translate(hint, playback_lang), playback_lang)
-                    st.audio(mp3, format="audio/mp3")
+                    audio_bytes = speak_gtts(maybe_translate(hint, playback_lang), playback_lang)
+                    if audio_bytes:
+                        st.audio(audio_bytes, format="audio/mp3", autoplay=True)
     else:
         st.balloons()
         st.write("🎉 Roleplay complete!")
