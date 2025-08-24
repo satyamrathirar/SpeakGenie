@@ -3,7 +3,6 @@ import io
 import json
 import sys
 import tempfile
-import threading
 import time
 from typing import List
 from dotenv import load_dotenv
