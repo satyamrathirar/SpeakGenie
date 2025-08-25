@@ -274,22 +274,6 @@ model = init_gemini()
 
 recorded_bytes = None
 
-# Microphone capture
-if HAS_MIC:
-    st.subheader("🎤 Press and speak")
-    mic = mic_recorder(start_prompt="Tap to Speak", stop_prompt="Stop", key=f"mic_{mode}")
-    if mic and isinstance(mic, dict) and mic.get("bytes"):
-        recorded_bytes = mic["bytes"]
-        st.audio(recorded_bytes, format="audio/wav")
-else:
-    st.info("Microphone component not available. Use the uploader below.")
-
-# Fallback uploader
-uploaded = st.file_uploader("Or upload a short WAV/MP3/M4A", type=["wav", "mp3", "m4a"])
-if uploaded is not None and not recorded_bytes:
-    recorded_bytes = uploaded.read()
-    st.audio(recorded_bytes)
-
 # Main logic
 if mode == "Free Chat":
     st.subheader("Ask Genie anything!")
@@ -337,10 +321,30 @@ if mode == "Free Chat":
     
     # Text input chat box
     with st.form("chat_form", clear_on_submit=True):
-        user_input = st.text_input("💬 Type your message here:", placeholder="Ask Genie anything...")
-        col1, col2 = st.columns([1, 4])
+        user_input = st.text_input("💬 Type your question here:", placeholder="Ask Genie anything...")
+        col1, col2, col3 = st.columns([1, 1, 1])
         with col1:
+            # File upload
+            uploaded = st.file_uploader("📎 Upload", type=["wav", "mp3", "m4a"], key=f"upload_{mode}", label_visibility="collapsed")
+            if uploaded is not None and not recorded_bytes:
+                recorded_bytes = uploaded.read()
+                st.audio(recorded_bytes)
+            
+        with col2:
+            # Microphone capture
+            if HAS_MIC:
+                mic = mic_recorder(start_prompt="🎤 Speak", stop_prompt="Stop", key=f"mic_{mode}")
+                if mic and isinstance(mic, dict) and mic.get("bytes"):
+                    recorded_bytes = mic["bytes"]
+                    st.audio(recorded_bytes, format="audio/wav")
+            else:
+                st.caption("Mic unavailable")
+        with col3:
             submit_text = st.form_submit_button("Send 📤")
+    
+    # Show input method information
+    st.caption("💬 Type, 🎤 speak, or 📎 upload audio to chat with Genie!")
+    st.caption("📎 Supported audio formats: WAV, MP3, M4A")
     
     # Handle text input
     if submit_text and user_input.strip():
@@ -509,6 +513,30 @@ elif mode == "Roleplay":
             if audio_bytes:
                 st.audio(audio_bytes, format="audio/mp3")
                 play_audio_js(audio_bytes)  # Auto-play using JavaScript
+
+        # Voice input section for roleplay
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            st.caption("Respond:")
+        with col2:
+            # Microphone capture
+            if HAS_MIC:
+                mic = mic_recorder(start_prompt="🎤 Speak", stop_prompt="Stop", key=f"rp_mic_{mode}_{i}")
+                if mic and isinstance(mic, dict) and mic.get("bytes"):
+                    recorded_bytes = mic["bytes"]
+                    st.audio(recorded_bytes, format="audio/wav")
+            else:
+                st.caption("Mic unavailable")
+        with col3:
+            # File upload for roleplay
+            uploaded = st.file_uploader("📎 Upload", type=["wav", "mp3", "m4a"], key=f"rp_upload_{mode}_{i}", label_visibility="collapsed")
+            if uploaded is not None and not recorded_bytes:
+                recorded_bytes = uploaded.read()
+                st.audio(recorded_bytes)
+
+        # Show roleplay input information
+        st.caption("🎤 Speak or 📎 upload audio to respond")
+        st.caption("📎 Supported audio formats: WAV, MP3, M4A")
 
 
         if recorded_bytes:
