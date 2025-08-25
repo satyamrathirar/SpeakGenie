@@ -1,54 +1,40 @@
 import os
 import io
-import json
-import sys
 import tempfile
-import time
 from typing import List
 from dotenv import load_dotenv
 import streamlit as st
 
-# Optional mic component. If missing, fall back to file upload.
+
 try:
-    from streamlit_mic_recorder import mic_recorder  # pip install streamlit-mic-recorder
+    from streamlit_mic_recorder import mic_recorder
     HAS_MIC = True
 except Exception:
     HAS_MIC = False
 
-# -----------------------------
-# Google AI Studio (Gemini)
-# -----------------------------
-# pip install google-generativeai
+
 import google.generativeai as genai
 
 
-# -----------------------------
-# Whisper Speech-to-Text (local)
-# -----------------------------
-# pip install openai-whisper torch pydub
 import whisper
 from pydub import AudioSegment
 
-# -----------------------------
-# Text-to-Speech (simple & free)
-# -----------------------------
-from gtts import gTTS  # pip install gTTS
 
-# Optional translation for playback
+from gtts import gTTS
+
 try:
-    from googletrans import Translator  # pip install googletrans==4.0.0-rc1
+    from googletrans import Translator
     translator = Translator()
     HAS_TRANSLATE = True
 except Exception:
     HAS_TRANSLATE = False
 
-# =============================
-# App Config
-# =============================
-st.set_page_config(page_title="Genie Voice Tutor (Gemini)", page_icon="🎙️", layout="centered")
-APP_TITLE = "🎙️ Genie AI Voice Tutor (Gemini + Google STT)"
 
-# Initialize session state variables FIRST
+# App Configs
+st.set_page_config(page_title="AI Voice Tutor", page_icon="🎙️", layout="centered")
+APP_TITLE = "🎙️ SpeakGenie: AI Voice Tutor"
+
+# Initialize session state variables
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "stop_response" not in st.session_state:
@@ -65,8 +51,8 @@ if "rp_key" not in st.session_state:
     st.session_state.rp_key = "school"
 
 # Models / languages
-load_dotenv()  # Ensure .env is loaded before reading GEMINI_MODEL
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # fast & generous free tier
+load_dotenv()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # default is 1.5 flash, if not specified in .env
 SUPPORTED_LANGS = ["English", "Hindi", "Marathi", "Tamil"]
 LANG_CODE = {"English": "en", "Hindi": "hi", "Marathi": "mr", "Tamil": "ta"}
 
@@ -96,14 +82,12 @@ ROLEPLAY_SCENARIOS = {
     }
 }
 
-# =============================
 # Setup Helpers
-# =============================
+
 @st.cache_resource(show_spinner=False)
-  # pip install python-dotenv
 
 def init_gemini():
-    load_dotenv()  # Load variables from .env if present
+    load_dotenv()
     api_key = os.getenv("GOOGLE_API_KEY") or st.secrets.get("GOOGLE_API_KEY", None)
     if not api_key:
         return None
@@ -115,9 +99,7 @@ def init_gemini():
         return None
 
 
-# =============================
 # Whisper Transcription Helper
-# =============================
 def transcribe_whisper(audio_bytes: bytes, lang_code: str = "en") -> str:
     """Transcribe audio using OpenAI Whisper. Accepts bytes, returns text."""
     # Save to temp WAV file
@@ -125,14 +107,11 @@ def transcribe_whisper(audio_bytes: bytes, lang_code: str = "en") -> str:
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
             audio.export(tmp.name, format="wav")
-            model = whisper.load_model("base")  # You can use "tiny", "base", "small", "medium", "large"
+            model = whisper.load_model("base")  # available models: "tiny", "base", "small", "medium", "large"
             result = model.transcribe(tmp.name, language=lang_code)
             return result.get("text", "").strip() or "(No speech detected)"
     except Exception as e:
         return f"(Transcription error: {e})"
-
-
-
 
 
 def gemini_reply(model, user_text: str, persona: str = "tutor") -> str:
@@ -156,7 +135,6 @@ def gemini_reply(model, user_text: str, persona: str = "tutor") -> str:
             "and ask one gentle follow-up question. Avoid personal data and unsafe topics."
         )
 
-    # Build prompt without f-string to avoid any accidental brace issues
     prompt = ("{sys}\n\nChild said: {user}\n\nYour reply:").format(sys=sys, user=user_text)
 
 
@@ -187,8 +165,6 @@ def gemini_reply(model, user_text: str, persona: str = "tutor") -> str:
         return f"(Model error: {e})"
 
 
-
-
 def maybe_translate(text: str, target_lang: str) -> str:
     if target_lang == "English" or not text:
         return text
@@ -214,7 +190,6 @@ def speak_gtts(text: str, target_lang: str) -> bytes:
         return st.session_state.audio_cache[cache_key]
     
     try:
-        # Use faster TTS settings
         tts = gTTS(text=text, lang=lang, slow=False, tld="com")
         buf = io.BytesIO()
         tts.write_to_fp(buf)
@@ -261,9 +236,7 @@ def emoji_feedback(text: str) -> str:
         return "👍"
     return "🙂"
 
-# =============================
 # UI
-# =============================
 st.title(APP_TITLE)
 with st.sidebar:
     st.header("Settings")
@@ -278,7 +251,9 @@ recorded_bytes = None
 if mode == "Free Chat":
     st.subheader("Ask Genie anything!")
     
-    # Display chat history
+    status_container = st.empty()
+
+    # Chat history
     chat_container = st.container()
     with chat_container:
         for i, message in enumerate(st.session_state.chat_history):
@@ -293,8 +268,9 @@ if mode == "Free Chat":
                     # Display cached audio if available
                     if "audio" in message and message["audio"]:
                         st.audio(message["audio"], format="audio/mp3")
-                        # Auto-play the audio using JavaScript
-                        play_audio_js(message["audio"])
+                        # Auto-play the most recent message
+                        if i == len(st.session_state.chat_history) - 1:
+                            play_audio_js(message["audio"])
     
     # Clear chat button
     if st.session_state.chat_history:
@@ -326,9 +302,8 @@ if mode == "Free Chat":
         with col1:
             # File upload
             uploaded = st.file_uploader("📎 Upload", type=["wav", "mp3", "m4a"], key=f"upload_{mode}", label_visibility="collapsed")
-            if uploaded is not None and not recorded_bytes:
+            if uploaded is not None:
                 recorded_bytes = uploaded.read()
-                st.audio(recorded_bytes)
             
         with col2:
             # Microphone capture
@@ -336,7 +311,6 @@ if mode == "Free Chat":
                 mic = mic_recorder(start_prompt="🎤 Speak", stop_prompt="Stop", key=f"mic_{mode}")
                 if mic and isinstance(mic, dict) and mic.get("bytes"):
                     recorded_bytes = mic["bytes"]
-                    st.audio(recorded_bytes, format="audio/wav")
             else:
                 st.caption("Mic unavailable")
         with col3:
@@ -345,117 +319,118 @@ if mode == "Free Chat":
     # Show input method information
     st.caption("💬 Type, 🎤 speak, or 📎 upload audio to chat with Genie!")
     st.caption("📎 Supported audio formats: WAV, MP3, M4A")
+    st.caption("🎙️ After recording with microphone, click Send to process your audio")
     
-    # Handle text input
-    if submit_text and user_input.strip():
+    # Handle both text input and audio input
+    if submit_text and (user_input.strip() or recorded_bytes):
         # Reset stop flag
         st.session_state.stop_response = False
         
-        # Add user message to chat history
-        st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
-
-        # Generate response
-        with st.spinner("🤔 Thinking with Gemini..."):
-            reply = gemini_reply(model, user_input.strip(), persona="tutor")
-        
-        # Add Genie response to chat history only if not stopped
-        if reply != "(Response stopped by user)":
-            # Play audio
-            final_text = maybe_translate(reply, playback_lang)
-            
-            # Quick check if audio is cached
-            cache_key = f"{final_text}_{LANG_CODE.get(playback_lang, 'en')}"
-            if cache_key in st.session_state.audio_cache:
-                # Use cached audio immediately
-                audio_bytes = st.session_state.audio_cache[cache_key]
-                st.audio(audio_bytes, format="audio/mp3")
-                play_audio_js(audio_bytes)  # Auto-play using JavaScript
-                st.session_state.chat_history.append({
-                    "role": "genie", 
-                    "content": reply, 
-                    "audio": audio_bytes
-                })
+        # Process audio input if available
+        if recorded_bytes and not user_input.strip():
+            # Check if chat was just cleared - if so, ignore this audio processing
+            if st.session_state.chat_just_cleared:
+                st.session_state.chat_just_cleared = False  # Reset the flag
+                st.caption("Chat cleared - audio input ignored.")
             else:
-                # Generate new audio with timeout
-                with st.spinner("🔊 Generating voice..."):
-                    try:
-                        audio_bytes = speak_gtts(final_text, playback_lang)
-                        if audio_bytes:
-                            st.audio(audio_bytes, format="audio/mp3")
-                            play_audio_js(audio_bytes)  # Auto-play using JavaScript
-                            # Store message with audio
+                # Create a unique identifier for this audio to prevent duplicate processing
+                audio_id = hash(recorded_bytes)
+                
+                # Only process if this is new audio
+                if st.session_state.last_audio_processed != audio_id:
+                    st.session_state.last_audio_processed = audio_id
+                    
+                    with status_container:
+                        with st.spinner("🎙️ Transcribing with Whisper..."):
+                            user_text = transcribe_whisper(recorded_bytes, lang_code="en")
+                    
+                    # Add user message to chat history
+                    st.session_state.chat_history.append({"role": "user", "content": user_text})
+
+                    # Generate response
+                    with status_container:
+                        with st.spinner("🤔 Thinking with Gemini..."):
+                            reply = gemini_reply(model, user_text, persona="tutor")
+                    
+                    # Add Genie response to chat history only if not stopped
+                    if reply != "(Response stopped by user)":
+                        # Play audio
+                        final_text = maybe_translate(reply, playback_lang)
+                        
+                        # Quick check if audio is cached
+                        cache_key = f"{final_text}_{LANG_CODE.get(playback_lang, 'en')}"
+                        if cache_key in st.session_state.audio_cache:
+                            # Use cached audio immediately
+                            audio_bytes = st.session_state.audio_cache[cache_key]
                             st.session_state.chat_history.append({
                                 "role": "genie", 
                                 "content": reply, 
                                 "audio": audio_bytes
                             })
                         else:
-                            # Store message without audio if generation failed
-                            st.session_state.chat_history.append({
-                                "role": "genie", 
-                                "content": reply
-                            })
-                            st.warning("Voice generation failed, but response saved.")
-                    except Exception as e:
-                        st.error(f"Audio generation failed: {e}")
-                        # Store message without audio
-                        st.session_state.chat_history.append({
-                            "role": "genie", 
-                            "content": reply
-                        })
-        
-        # Rerun to refresh chat display
-        st.rerun()
-    
-    if recorded_bytes:
-        # Check if chat was just cleared - if so, ignore this audio processing
-        if st.session_state.chat_just_cleared:
-            st.session_state.chat_just_cleared = False  # Reset the flag
-            st.caption("Chat cleared - audio input ignored.")
-        else:
-            # Create a unique identifier for this audio to prevent duplicate processing
-            audio_id = hash(recorded_bytes)
-            
-            # Only process if this is new audio
-            if st.session_state.last_audio_processed != audio_id:
-                st.session_state.last_audio_processed = audio_id
-                st.session_state.stop_response = False  # Reset stop flag
-                
-                with st.spinner("🎙️ Transcribing with Whisper..."):
-                    user_text = transcribe_whisper(recorded_bytes, lang_code="en")
-                
-                # Add user message to chat history
-                st.session_state.chat_history.append({"role": "user", "content": user_text})
-
-                # Generate response
-                with st.spinner("🤔 Thinking with Gemini..."):
-                    reply = gemini_reply(model, user_text, persona="tutor")
-                
-                # Add Genie response to chat history only if not stopped
-                if reply != "(Response stopped by user)":
-                    # Play audio
-                    final_text = maybe_translate(reply, playback_lang)
+                            # Generate new audio with timeout
+                            with status_container:
+                                with st.spinner("🔊 Generating voice..."):
+                                    try:
+                                        audio_bytes = speak_gtts(final_text, playback_lang)
+                                        if audio_bytes:
+                                            # Store message with audio
+                                            st.session_state.chat_history.append({
+                                                "role": "genie", 
+                                                "content": reply, 
+                                                "audio": audio_bytes
+                                            })
+                                        else:
+                                            # Store message without audio if generation failed
+                                            st.session_state.chat_history.append({
+                                                "role": "genie", 
+                                                "content": reply
+                                            })
+                                            st.warning("Voice generation failed, but response saved.")
+                                    except Exception as e:
+                                        st.error(f"Audio generation failed: {e}")
+                                        # Store message without audio
+                                        st.session_state.chat_history.append({
+                                            "role": "genie", 
+                                            "content": reply
+                                        })
                     
-                    # Quick check if audio is cached
-                    cache_key = f"{final_text}_{LANG_CODE.get(playback_lang, 'en')}"
-                    if cache_key in st.session_state.audio_cache:
-                        # Use cached audio immediately
-                        audio_bytes = st.session_state.audio_cache[cache_key]
-                        st.audio(audio_bytes, format="audio/mp3")
-                        play_audio_js(audio_bytes)  # Auto-play using JavaScript
-                        st.session_state.chat_history.append({
-                            "role": "genie", 
-                            "content": reply, 
-                            "audio": audio_bytes
-                        })
-                    else:
-                        # Generate new audio with timeout
+                    # Clear status and rerun to refresh chat display
+                    status_container.empty()
+                    st.rerun()
+        
+        # Process text input if available
+        elif user_input.strip():
+            # Add user message to chat history
+            st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+
+            # Generate response
+            with status_container:
+                with st.spinner("🤔 Thinking with Gemini..."):
+                    reply = gemini_reply(model, user_input.strip(), persona="tutor")
+            
+            # Add Genie response to chat history only if not stopped
+            if reply != "(Response stopped by user)":
+                # Play audio
+                final_text = maybe_translate(reply, playback_lang)
+                
+                # Quick check if audio is cached
+                cache_key = f"{final_text}_{LANG_CODE.get(playback_lang, 'en')}"
+                if cache_key in st.session_state.audio_cache:
+                    # Use cached audio immediately
+                    audio_bytes = st.session_state.audio_cache[cache_key]
+                    st.session_state.chat_history.append({
+                        "role": "genie", 
+                        "content": reply, 
+                        "audio": audio_bytes
+                    })
+                else:
+                    # Generate new audio with timeout
+                    with status_container:
                         with st.spinner("🔊 Generating voice..."):
                             try:
                                 audio_bytes = speak_gtts(final_text, playback_lang)
                                 if audio_bytes:
-                                    st.audio(audio_bytes, format="audio/mp3")
-                                    play_audio_js(audio_bytes)  # Auto-play using JavaScript
                                     # Store message with audio
                                     st.session_state.chat_history.append({
                                         "role": "genie", 
@@ -476,9 +451,13 @@ if mode == "Free Chat":
                                     "role": "genie", 
                                     "content": reply
                                 })
-                
-                # Rerun to refresh chat display
-                st.rerun()
+            
+            # Clear status and rerun to refresh chat display
+            status_container.empty()
+            st.rerun()
+    
+    if recorded_bytes:
+        st.caption("Audio recorded - click Send to process")
     else:
         st.caption("Tap the mic or upload audio to start.")
 
@@ -524,7 +503,6 @@ elif mode == "Roleplay":
                 mic = mic_recorder(start_prompt="🎤 Speak", stop_prompt="Stop", key=f"rp_mic_{mode}_{i}")
                 if mic and isinstance(mic, dict) and mic.get("bytes"):
                     recorded_bytes = mic["bytes"]
-                    st.audio(recorded_bytes, format="audio/wav")
             else:
                 st.caption("Mic unavailable")
         with col3:
@@ -532,11 +510,11 @@ elif mode == "Roleplay":
             uploaded = st.file_uploader("📎 Upload", type=["wav", "mp3", "m4a"], key=f"rp_upload_{mode}_{i}", label_visibility="collapsed")
             if uploaded is not None and not recorded_bytes:
                 recorded_bytes = uploaded.read()
-                st.audio(recorded_bytes)
 
         # Show roleplay input information
         st.caption("🎤 Speak or 📎 upload audio to respond")
         st.caption("📎 Supported audio formats: WAV, MP3, M4A")
+        st.caption("🎙️ After recording, audio will be processed automatically")
 
 
         if recorded_bytes:
