@@ -17,9 +17,11 @@ except Exception:
     HAS_MIC = False
 
 try:
-    from googletrans import Translator
-    translator = Translator()
+    # Use deep-translator as the primary translation service (more reliable)
+    from deep_translator import GoogleTranslator
     HAS_TRANSLATE = True
+except ImportError:
+    HAS_TRANSLATE = False
 except Exception:
     HAS_TRANSLATE = False
 
@@ -254,12 +256,27 @@ def maybe_translate(text: str, target_lang: str) -> str:
     if target_lang == "English" or not text:
         return text
     if not HAS_TRANSLATE:
-        return f"[Translation unavailable] {text}"
+        return text  # Silently return original text if translation unavailable
+    
     try:
         code = LANG_CODE.get(target_lang, "en")
-        return translator.translate(text, dest=code).text
+        if code == "en":  # If target is English or not found, return original
+            return text
+        
+        # Use deep-translator (more reliable than googletrans)
+        from deep_translator import GoogleTranslator
+        translator = GoogleTranslator(source='en', target=code)
+        result = translator.translate(text)
+        
+        if result and result.strip():
+            return result
+        else:
+            # If translation returns empty, return original text
+            return text
+            
     except Exception:
-        return f"[Translation failed] {text}"
+        # For any error, just return original text silently
+        return text
 
 
 def speak_gtts(text: str, target_lang: str) -> bytes:
@@ -327,6 +344,22 @@ with st.sidebar:
     st.header("Settings")
     playback_lang = st.selectbox("Playback Language", SUPPORTED_LANGS, index=0)
     mode = st.radio("Mode", ["Free Chat", "Roleplay"], index=0)
+    
+    # Show translation status
+    if HAS_TRANSLATE:
+        try:
+            # Quick test to verify translation is working
+            from deep_translator import GoogleTranslator
+            test_translator = GoogleTranslator(source='en', target='hi')
+            test_result = test_translator.translate("Hello")
+            if test_result:
+                st.success("🌐 Translation: Available")
+            else:
+                st.warning("🌐 Translation: Limited")
+        except:
+            st.info("🌐 Translation: English Only")
+    else:
+        st.info("🌐 Translation: English Only")
 
 model = init_gemini()
 
