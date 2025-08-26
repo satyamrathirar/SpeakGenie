@@ -490,8 +490,7 @@ elif mode == "Roleplay":
             prompt_text = maybe_translate(ai_line, playback_lang)
             audio_bytes = speak_gtts(prompt_text, playback_lang)
             if audio_bytes:
-                st.audio(audio_bytes, format="audio/mp3")
-                play_audio_js(audio_bytes)  # Auto-play using JavaScript
+                play_audio_js(audio_bytes)  # Auto-play using JavaScript only
 
         # Voice input section for roleplay
         col1, col2, col3 = st.columns([1, 1, 2])
