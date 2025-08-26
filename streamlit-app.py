@@ -1,27 +1,20 @@
 import os
 import io
-import time
 import tempfile
+import json
 from typing import List
 from dotenv import load_dotenv
 import streamlit as st
-
+import google.generativeai as genai
+import whisper
+from pydub import AudioSegment
+from gtts import gTTS
 
 try:
     from streamlit_mic_recorder import mic_recorder
     HAS_MIC = True
 except Exception:
     HAS_MIC = False
-
-
-import google.generativeai as genai
-
-
-import whisper
-from pydub import AudioSegment
-
-
-from gtts import gTTS
 
 try:
     from googletrans import Translator
@@ -30,9 +23,8 @@ try:
 except Exception:
     HAS_TRANSLATE = False
 
-
 # App Configs
-st.set_page_config(page_title="AI Voice Tutor", page_icon="🎙️", layout="centered")
+st.set_page_config(page_title="SpeakGenie", page_icon="🎙️", layout="centered")
 APP_TITLE = "🎙️ SpeakGenie: AI Voice Tutor"
 
 # Initialize session state variables
@@ -71,26 +63,47 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # default is 1.5 f
 SUPPORTED_LANGS = ["English", "Hindi", "Marathi", "Tamil"]
 LANG_CODE = {"English": "en", "Hindi": "hi", "Marathi": "mr", "Tamil": "ta"}
 
-# Roleplay scenarios (simplified structure for dynamic questions)
-ROLEPLAY_SCENARIOS = {
-    "school": {
-        "title": "🏫 At School",
-        "description": "Practice conversations you might have at school with teachers and classmates",
-        "context": "You are at school. You will have conversations with teachers, classmates, and other school staff about school activities, subjects, and daily routines."
-    },
-    "store": {
-        "title": "🛒 At the Store", 
-        "description": "Learn to shop and talk to store workers when buying things",
-        "context": "You are at a store with your family. You will practice talking to store workers, asking for items, and learning about shopping."
-    },
-    "home": {
-        "title": "👨‍👩‍👧 At Home",
-        "description": "Practice family conversations and talking about home activities", 
-        "context": "You are at home with your family. You will have conversations about daily activities, helping at home, and family time."
-    }
-}
-
 # Setup Helpers
+
+def load_fallback_questions():
+    """Load fallback questions from JSON file"""
+    try:
+        with open('roleplay_questions.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        st.error(f"Error loading roleplay questions: {e}")
+        # Return basic fallback if file doesn't exist
+        return {
+            "school": ["Good morning! What's your name?", "What grade are you in?", "What's your favorite subject?"],
+            "store": ["Welcome! What would you like to buy?", "How many do you need?", "Do you have money to pay?"],
+            "home": ["Who do you live with at home?", "Do you help with chores?", "What do you like to do at home?"]
+        }
+
+def load_roleplay_scenarios():
+    """Load roleplay scenarios from JSON file"""
+    try:
+        with open('roleplay_scenarios.json', 'r') as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        st.error(f"Error loading roleplay scenarios: {e}")
+        # Return basic fallback if file doesn't exist
+        return {
+            "school": {
+                "title": "🏫 At School",
+                "description": "Practice conversations you might have at school with teachers and classmates",
+                "context": "You are at school. You will have conversations with teachers, classmates, and other school staff about school activities, subjects, and daily routines."
+            },
+            "store": {
+                "title": "🛒 At the Store", 
+                "description": "Learn to shop and talk to store workers when buying things",
+                "context": "You are at a store with your family. You will practice talking to store workers, asking for items, and learning about shopping."
+            },
+            "home": {
+                "title": "👨‍👩‍👧 At Home",
+                "description": "Practice family conversations and talking about home activities", 
+                "context": "You are at home with your family. You will have conversations about daily activities, helping at home, and family time."
+            }
+        }
 
 @st.cache_resource(show_spinner=False)
 
@@ -109,46 +122,11 @@ def init_gemini():
 
 def generate_roleplay_questions(model, scenario_key: str, scenario_context: str) -> List[str]:
     """Generate 10 dynamic questions for a roleplay scenario using Gemini"""
+    # Load fallback questions from JSON file
+    fallback_questions = load_fallback_questions()
+    
     if not model:
-        # Fallback questions if AI is unavailable
-        fallback_questions = {
-            "school": [
-                "Good morning! What's your name?",
-                "What grade are you in?", 
-                "What's your favorite subject?",
-                "Do you like your teacher?",
-                "What do you do during recess?",
-                "Do you have homework today?",
-                "What's your favorite school activity?",
-                "Do you eat lunch at school?",
-                "What do you learn in math class?",
-                "Do you have any friends at school?"
-            ],
-            "store": [
-                "Welcome! What would you like to buy?",
-                "How many do you need?",
-                "Do you have money to pay?",
-                "Would you like a bag?",
-                "Is this for you or your family?",
-                "Do you need anything else?",
-                "Have you been to this store before?",
-                "Do you like shopping?",
-                "What's your favorite thing to buy?",
-                "Thank you for shopping! Have a nice day!"
-            ],
-            "home": [
-                "Who do you live with at home?",
-                "Do you help with chores?",
-                "What's your favorite room in the house?",
-                "What do you like to do at home?",
-                "Do you have pets?",
-                "What time do you go to bed?",
-                "What's your favorite meal?",
-                "Do you have your own room?",
-                "What games do you play at home?",
-                "Do you like spending time with your family?"
-            ]
-        }
+        # Use fallback questions if AI is unavailable
         return fallback_questions.get(scenario_key, fallback_questions["school"])
     
     prompt = f"""
@@ -196,29 +174,14 @@ def generate_roleplay_questions(model, scenario_key: str, scenario_context: str)
                 return questions[:10]
             else:
                 # If not enough questions, use fallback
-                fallback = {
-                    "school": ["Good morning! What's your name?", "What grade are you in?", "What's your favorite subject?", "Do you like your teacher?", "What do you do during recess?", "Do you have homework today?", "What's your favorite school activity?", "Do you eat lunch at school?", "What do you learn in math class?", "Do you have any friends at school?"],
-                    "store": ["Welcome! What would you like to buy?", "How many do you need?", "Do you have money to pay?", "Would you like a bag?", "Is this for you or your family?", "Do you need anything else?", "Have you been to this store before?", "Do you like shopping?", "What's your favorite thing to buy?", "Thank you for shopping! Have a nice day!"],
-                    "home": ["Who do you live with at home?", "Do you help with chores?", "What's your favorite room in the house?", "What do you like to do at home?", "Do you have pets?", "What time do you go to bed?", "What's your favorite meal?", "Do you have your own room?", "What games do you play at home?", "Do you like spending time with your family?"]
-                }
-                return fallback.get(scenario_key, fallback["school"])
+                return fallback_questions.get(scenario_key, fallback_questions["school"])
         else:
             # Fallback if response is empty
-            fallback = {
-                "school": ["Good morning! What's your name?", "What grade are you in?", "What's your favorite subject?", "Do you like your teacher?", "What do you do during recess?", "Do you have homework today?", "What's your favorite school activity?", "Do you eat lunch at school?", "What do you learn in math class?", "Do you have any friends at school?"],
-                "store": ["Welcome! What would you like to buy?", "How many do you need?", "Do you have money to pay?", "Would you like a bag?", "Is this for you or your family?", "Do you need anything else?", "Have you been to this store before?", "Do you like shopping?", "What's your favorite thing to buy?", "Thank you for shopping! Have a nice day!"],
-                "home": ["Who do you live with at home?", "Do you help with chores?", "What's your favorite room in the house?", "What do you like to do at home?", "Do you have pets?", "What time do you go to bed?", "What's your favorite meal?", "Do you have your own room?", "What games do you play at home?", "Do you like spending time with your family?"]
-            }
-            return fallback.get(scenario_key, fallback["school"])
+            return fallback_questions.get(scenario_key, fallback_questions["school"])
     except Exception as e:
         st.error(f"Error generating questions: {e}")
         # Return fallback questions
-        fallback = {
-            "school": ["Good morning! What's your name?", "What grade are you in?", "What's your favorite subject?", "Do you like your teacher?", "What do you do during recess?", "Do you have homework today?", "What's your favorite school activity?", "Do you eat lunch at school?", "What do you learn in math class?", "Do you have any friends at school?"],
-            "store": ["Welcome! What would you like to buy?", "How many do you need?", "Do you have money to pay?", "Would you like a bag?", "Is this for you or your family?", "Do you need anything else?", "Have you been to this store before?", "Do you like shopping?", "What's your favorite thing to buy?", "Thank you for shopping! Have a nice day!"],
-            "home": ["Who do you live with at home?", "Do you help with chores?", "What's your favorite room in the house?", "What do you like to do at home?", "Do you have pets?", "What time do you go to bed?", "What's your favorite meal?", "Do you have your own room?", "What games do you play at home?", "Do you like spending time with your family?"]
-        }
-        return fallback.get(scenario_key, fallback["school"])
+        return fallback_questions.get(scenario_key, fallback_questions["school"])
 
 
 # Whisper Transcription Helper
@@ -587,6 +550,9 @@ elif mode == "Roleplay":
     st.subheader("Let's imagine a scenario!")
     st.caption("Students practice speaking through guided, interactive scenarios. These help build confidence and everyday vocabulary.")
     
+    # Load roleplay scenarios
+    ROLEPLAY_SCENARIOS = load_roleplay_scenarios()
+    
     # Emergency stop button
     col1, col2 = st.columns([3, 1])
     with col2:
@@ -714,6 +680,17 @@ elif mode == "Roleplay":
                 st.session_state.rp_conversation_turns = []  # Reset conversation for next question
                 st.session_state.rp_auto_played = set()  # Reset auto-play tracking for next question
                 
+                # Check if roleplay should complete after moving to next step
+                if st.session_state.rp_step >= 10:
+                    st.balloons()
+                    completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
+                    st.success(completion_text)
+                    
+                    # Play completion audio
+                    final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
+                    if final_audio:
+                        play_audio_js(final_audio)
+                
                 st.rerun()
         
         # Input guidance
@@ -779,24 +756,10 @@ elif mode == "Roleplay":
             else:
                 st.warning("I couldn't hear you clearly. Please try recording again.")
     
-    # Check if roleplay should complete (moved outside audio processing block)
-    if st.session_state.rp_questions and st.session_state.rp_step >= 10 and not st.session_state.rp_stop_requested:
-        # Save the final conversation to history before completing
-        if st.session_state.rp_conversation_turns:
-            st.session_state.rp_conversation_history.append({
-                "question_number": st.session_state.rp_step,
-                "conversation": st.session_state.rp_conversation_turns.copy()
-            })
-            st.session_state.rp_conversation_turns = []  # Clear for completion display
-        
-        st.balloons()
-        completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
-        st.success(completion_text)
-        
-        # Play completion audio
-        final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
-        if final_audio:
-            play_audio_js(final_audio)
+    elif st.session_state.rp_step >= 10:
+        # Roleplay completed
+        st.success("🎉 Roleplay Complete!")
+        st.markdown("### Great job finishing the roleplay!")
         
         # Show conversation summary
         if st.session_state.rp_conversation_history:
@@ -860,6 +823,11 @@ elif mode == "Roleplay":
         """)
         
         st.info("👆 Choose a scenario above to start your interactive roleplay with 10 questions!")
+    
+
+
+        
+        
 
 st.markdown("---")
 st.caption(

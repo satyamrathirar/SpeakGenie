@@ -1,0 +1,38 @@
+{
+  "school": [
+    "Good morning! What's your name?",
+    "What grade are you in?", 
+    "What's your favorite subject?",
+    "Do you like your teacher?",
+    "What do you do during recess?",
+    "Do you have homework today?",
+    "What's your favorite school activity?",
+    "Do you eat lunch at school?",
+    "What do you learn in math class?",
+    "Do you have any friends at school?"
+  ],
+  "store": [
+    "Welcome! What would you like to buy?",
+    "How many do you need?",
+    "Do you have money to pay?",
+    "Would you like a bag?",
+    "Is this for you or your family?",
+    "Do you need anything else?",
+    "Have you been to this store before?",
+    "Do you like shopping?",
+    "What's your favorite thing to buy?",
+    "Thank you for shopping! Have a nice day!"
+  ],
+  "home": [
+    "Who do you live with at home?",
+    "Do you help with chores?",
+    "What's your favorite room in the house?",
+    "What do you like to do at home?",
+    "Do you have pets?",
+    "What time do you go to bed?",
+    "What's your favorite meal?",
+    "Do you have your own room?",
+    "What games do you play at home?",
+    "Do you like spending time with your family?"
+  ]
+}

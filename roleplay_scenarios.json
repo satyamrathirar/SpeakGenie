@@ -1,0 +1,17 @@
+{
+  "school": {
+    "title": "🏫 At School",
+    "description": "Practice conversations you might have at school with teachers and classmates",
+    "context": "You are at school. You will have conversations with teachers, classmates, and other school staff about school activities, subjects, and daily routines."
+  },
+  "store": {
+    "title": "🛒 At the Store", 
+    "description": "Learn to shop and talk to store workers when buying things",
+    "context": "You are at a store with your family. You will practice talking to store workers, asking for items, and learning about shopping."
+  },
+  "home": {
+    "title": "👨‍👩‍👧 At Home",
+    "description": "Practice family conversations and talking about home activities", 
+    "context": "You are at home with your family. You will have conversations about daily activities, helping at home, and family time."
+  }
+}
