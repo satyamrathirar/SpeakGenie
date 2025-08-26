@@ -4,6 +4,8 @@ google-generativeai
 gTTS
 pydub
 googletrans==4.0.0-rc1
+deep-translator
 streamlit-mic-recorder
+SpeechRecognition
 openai-whisper
 torch

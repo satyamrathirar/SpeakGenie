@@ -17,11 +17,10 @@ except Exception:
     HAS_MIC = False
 
 try:
-    # Use deep-translator as the primary translation service (more reliable)
-    from deep_translator import GoogleTranslator
-    HAS_TRANSLATE = True
-except ImportError:
-    HAS_TRANSLATE = False
+    # Check if deep-translator is available but don't import it yet
+    import importlib.util
+    spec = importlib.util.find_spec("deep_translator")
+    HAS_TRANSLATE = spec is not None
 except Exception:
     HAS_TRANSLATE = False
 
@@ -72,40 +71,24 @@ def load_fallback_questions():
     try:
         with open('roleplay_questions.json', 'r') as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        st.error(f"Error loading roleplay questions: {e}")
-        # Return basic fallback if file doesn't exist
-        return {
-            "school": ["Good morning! What's your name?", "What grade are you in?", "What's your favorite subject?"],
-            "store": ["Welcome! What would you like to buy?", "How many do you need?", "Do you have money to pay?"],
-            "home": ["Who do you live with at home?", "Do you help with chores?", "What do you like to do at home?"]
-        }
+    except FileNotFoundError:
+        st.error("Error: roleplay_questions.json file not found")
+        return None
+    except json.JSONDecodeError as e:
+        st.error(f"Error loading roleplay questions: Invalid JSON format - {e}")
+        return None
 
 def load_roleplay_scenarios():
     """Load roleplay scenarios from JSON file"""
     try:
         with open('roleplay_scenarios.json', 'r') as f:
             return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        st.error(f"Error loading roleplay scenarios: {e}")
-        # Return basic fallback if file doesn't exist
-        return {
-            "school": {
-                "title": "🏫 At School",
-                "description": "Practice conversations you might have at school with teachers and classmates",
-                "context": "You are at school. You will have conversations with teachers, classmates, and other school staff about school activities, subjects, and daily routines."
-            },
-            "store": {
-                "title": "🛒 At the Store", 
-                "description": "Learn to shop and talk to store workers when buying things",
-                "context": "You are at a store with your family. You will practice talking to store workers, asking for items, and learning about shopping."
-            },
-            "home": {
-                "title": "👨‍👩‍👧 At Home",
-                "description": "Practice family conversations and talking about home activities", 
-                "context": "You are at home with your family. You will have conversations about daily activities, helping at home, and family time."
-            }
-        }
+    except FileNotFoundError:
+        st.error("Error: roleplay_scenarios.json file not found")
+        return None
+    except json.JSONDecodeError as e:
+        st.error(f"Error loading roleplay scenarios: Invalid JSON format - {e}")
+        return None
 
 @st.cache_resource(show_spinner=False)
 
@@ -124,12 +107,13 @@ def init_gemini():
 
 def generate_roleplay_questions(model, scenario_key: str, scenario_context: str) -> List[str]:
     """Generate 10 dynamic questions for a roleplay scenario using Gemini"""
-    # Load fallback questions from JSON file
-    fallback_questions = load_fallback_questions()
     
     if not model:
-        # Use fallback questions if AI is unavailable
-        return fallback_questions.get(scenario_key, fallback_questions["school"])
+        # Only load fallback questions if AI is unavailable
+        fallback_questions = load_fallback_questions()
+        if fallback_questions is None:
+            return []
+        return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
     
     prompt = f"""
     Generate exactly 10 simple, child-friendly questions for a roleplay scenario about "{scenario_context}".
@@ -175,15 +159,24 @@ def generate_roleplay_questions(model, scenario_key: str, scenario_context: str)
             if len(questions) >= 10:
                 return questions[:10]
             else:
-                # If not enough questions, use fallback
-                return fallback_questions.get(scenario_key, fallback_questions["school"])
+                # If not enough questions generated, try to load fallback
+                fallback_questions = load_fallback_questions()
+                if fallback_questions is None:
+                    return []
+                return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
         else:
-            # Fallback if response is empty
-            return fallback_questions.get(scenario_key, fallback_questions["school"])
+            # If response is empty, try to load fallback
+            fallback_questions = load_fallback_questions()
+            if fallback_questions is None:
+                return []
+            return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
     except Exception as e:
         st.error(f"Error generating questions: {e}")
-        # Return fallback questions
-        return fallback_questions.get(scenario_key, fallback_questions["school"])
+        # Try to load fallback questions only if AI generation fails
+        fallback_questions = load_fallback_questions()
+        if fallback_questions is None:
+            return []
+        return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
 
 
 # Whisper Transcription Helper
@@ -345,21 +338,39 @@ with st.sidebar:
     playback_lang = st.selectbox("Playback Language", SUPPORTED_LANGS, index=0)
     mode = st.radio("Mode", ["Free Chat", "Roleplay"], index=0)
     
-    # Show translation status
-    if HAS_TRANSLATE:
-        try:
-            # Quick test to verify translation is working
-            from deep_translator import GoogleTranslator
-            test_translator = GoogleTranslator(source='en', target='hi')
-            test_result = test_translator.translate("Hello")
-            if test_result:
-                st.success("🌐 Translation: Available")
-            else:
-                st.warning("🌐 Translation: Limited")
-        except:
-            st.info("🌐 Translation: English Only")
+    # Show translation status (cached per language)
+    if playback_lang == "English":
+        st.info("🌐 Translation: English (Default)")
+    elif HAS_TRANSLATE:
+        # Cache translation test results in session state
+        cache_key = f"translation_test_{playback_lang}"
+        if cache_key not in st.session_state:
+            try:
+                from deep_translator import GoogleTranslator
+                target_code = LANG_CODE.get(playback_lang, "en")
+                if target_code != "en":
+                    test_translator = GoogleTranslator(source='en', target=target_code)
+                    test_result = test_translator.translate("Hello")
+                    st.session_state[cache_key] = "success" if test_result else "limited"
+                else:
+                    st.session_state[cache_key] = "english"
+            except Exception as e:
+                st.session_state[cache_key] = f"error: {str(e)}"
+        
+        # Display cached result
+        result = st.session_state[cache_key]
+        if result == "success":
+            st.success(f"🌐 Translation: Available for {playback_lang}")
+        elif result == "limited":
+            st.warning(f"🌐 Translation: Limited for {playback_lang}")
+        elif result == "english":
+            st.info("🌐 Translation: English (Default)")
+        else:
+            st.error(f"🌐 Translation: Error for {playback_lang}")
+            st.info("Falling back to English")
     else:
-        st.info("🌐 Translation: English Only")
+        st.warning(f"🌐 Translation: Not available for {playback_lang}")
+        st.info("Translation library not installed. Install 'deep-translator' for multilingual support.")
 
 model = init_gemini()
 
@@ -586,6 +597,11 @@ elif mode == "Roleplay":
     # Load roleplay scenarios
     ROLEPLAY_SCENARIOS = load_roleplay_scenarios()
     
+    # Check if scenarios were loaded successfully
+    if ROLEPLAY_SCENARIOS is None:
+        st.error("Cannot load roleplay scenarios. Please ensure roleplay_scenarios.json file exists and is properly formatted.")
+        st.stop()
+    
     # Emergency stop button
     col1, col2 = st.columns([3, 1])
     with col2:
@@ -633,6 +649,11 @@ elif mode == "Roleplay":
         with st.spinner("🤖 Generating roleplay questions..."):
             st.session_state.rp_questions = generate_roleplay_questions(model, current_key, scenario['context'])
             st.session_state.rp_current_question = st.session_state.rp_questions[0] if st.session_state.rp_questions else ""
+            
+            # Check if questions were successfully generated
+            if not st.session_state.rp_questions:
+                st.error("Cannot generate roleplay questions. Please ensure roleplay_questions.json file exists with questions for this scenario, or check your AI model configuration.")
+                st.stop()
     
     # Progress indicator
     if st.session_state.rp_questions:
