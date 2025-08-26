@@ -62,6 +62,8 @@ if "rp_conversation_turns" not in st.session_state:
     st.session_state.rp_conversation_turns = []
 if "rp_waiting_for_response" not in st.session_state:
     st.session_state.rp_waiting_for_response = False
+if "rp_auto_played" not in st.session_state:
+    st.session_state.rp_auto_played = set()
 
 # Models / languages
 load_dotenv()
@@ -596,6 +598,7 @@ elif mode == "Roleplay":
             st.session_state.rp_conversation_history = []
             st.session_state.rp_conversation_turns = []
             st.session_state.rp_waiting_for_response = False
+            st.session_state.rp_auto_played = set()
             st.warning("Roleplay stopped!")
             st.rerun()
     
@@ -618,6 +621,7 @@ elif mode == "Roleplay":
         st.session_state.rp_stop_requested = False
         st.session_state.rp_conversation_turns = []
         st.session_state.rp_waiting_for_response = False
+        st.session_state.rp_auto_played = set()
 
     scenario = ROLEPLAY_SCENARIOS[current_key]
     
@@ -649,12 +653,26 @@ elif mode == "Roleplay":
         for i, turn in enumerate(st.session_state.rp_conversation_turns):
             if turn["role"] == "ai":
                 st.markdown(f"**AI:** {turn['content']}")
-                # Add play button for AI messages
-                if st.button(f"🔊 Play", key=f"play_turn_{st.session_state.rp_step}_{i}"):
+                
+                # Create unique ID for this AI message
+                ai_message_id = f"{st.session_state.rp_step}_{i}_{turn['content'][:30]}"
+                
+                # Auto-play new AI messages that haven't been played yet
+                if ai_message_id not in st.session_state.rp_auto_played:
+                    st.session_state.rp_auto_played.add(ai_message_id)
                     prompt_text = maybe_translate(turn['content'], playback_lang)
                     audio_bytes = speak_gtts(prompt_text, playback_lang)
                     if audio_bytes:
                         play_audio_js(audio_bytes)
+                
+                # Add play button for AI messages
+                col_play1, col_play2 = st.columns([1, 10])
+                with col_play1:
+                    if st.button(f"🔊", key=f"play_turn_{st.session_state.rp_step}_{i}", help="Play this message"):
+                        prompt_text = maybe_translate(turn['content'], playback_lang)
+                        audio_bytes = speak_gtts(prompt_text, playback_lang)
+                        if audio_bytes:
+                            play_audio_js(audio_bytes)
             else:  # user
                 st.markdown(f"**You:** {turn['content']}")
                 st.caption(f"Speech quality: {emoji_feedback(turn['content'])}")
@@ -664,7 +682,7 @@ elif mode == "Roleplay":
         
         # Voice input section
         st.markdown("**Your turn to speak:**")
-        col1, col2, col3, col4 = st.columns([1, 1, 1, 1])
+        col1, col2 = st.columns([1, 2])
         
         recorded_bytes = None
         
@@ -682,17 +700,6 @@ elif mode == "Roleplay":
                 st.caption("Mic unavailable")
         
         with col2:
-            # File upload
-            uploaded = st.file_uploader(
-                "📎 Upload", 
-                type=["wav", "mp3", "m4a"], 
-                key=f"rp_upload_{current_key}_{st.session_state.rp_step}_{len(st.session_state.rp_conversation_turns)}",
-                label_visibility="collapsed"
-            )
-            if uploaded is not None:
-                recorded_bytes = uploaded.read()
-        
-        with col3:
             # Next Question button
             if st.button("➡️ Next Question", key=f"next_q_{st.session_state.rp_step}", type="primary"):
                 # Save current conversation to history
@@ -705,66 +712,13 @@ elif mode == "Roleplay":
                 # Move to next question
                 st.session_state.rp_step += 1
                 st.session_state.rp_conversation_turns = []  # Reset conversation for next question
+                st.session_state.rp_auto_played = set()  # Reset auto-play tracking for next question
                 
-                # Check if roleplay is complete
-                if st.session_state.rp_step >= 10:
-                    st.balloons()
-                    completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
-                    st.success(completion_text)
-                    
-                    # Play completion audio
-                    final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
-                    if final_audio:
-                        play_audio_js(final_audio)
-                    
-                    # Reset for next roleplay
-                    st.session_state.rp_step = 0
-                    st.session_state.rp_questions = []
-                    st.session_state.rp_current_question = ""
-                    st.session_state.rp_conversation_history = []
-                    st.session_state.rp_conversation_turns = []
-                    st.session_state.rp_waiting_for_response = False
-                
-                st.rerun()
-        
-        with col4:
-            # Skip button for difficult questions
-            if st.button("⏭️ Skip Question", help="Skip this question if too difficult"):
-                # Save current conversation to history even if skipped
-                if st.session_state.rp_conversation_turns:
-                    st.session_state.rp_conversation_history.append({
-                        "question_number": st.session_state.rp_step + 1,
-                        "conversation": st.session_state.rp_conversation_turns.copy(),
-                        "skipped": True
-                    })
-                
-                st.session_state.rp_step += 1
-                st.session_state.rp_conversation_turns = []  # Reset conversation for next question
-                
-                if st.session_state.rp_step >= 10:
-                    st.balloons()
-                    completion_text = "Great job! You completed the roleplay scenario!"
-                    st.success(completion_text)
-                    
-                    # Play completion audio
-                    final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
-                    if final_audio:
-                        play_audio_js(final_audio)
-                    
-                    # Reset for next roleplay
-                    st.session_state.rp_step = 0
-                    st.session_state.rp_questions = []
-                    st.session_state.rp_current_question = ""
-                    st.session_state.rp_conversation_history = []
-                    st.session_state.rp_conversation_turns = []
-                    st.session_state.rp_waiting_for_response = False
-                else:
-                    st.info("Question skipped! Let's try the next one.")
                 st.rerun()
         
         # Input guidance
-        st.caption("🎤 Record your response, 📎 upload audio, ➡️ next question, or ⏭️ skip")
-        st.caption("📎 Supported formats: WAV, MP3, M4A")
+        st.caption("🎤 Record your response or ➡️ next question")
+        st.caption("🎙️ Use the microphone to record your voice responses")
         
         # Process audio input
         if recorded_bytes:
@@ -817,11 +771,6 @@ elif mode == "Roleplay":
                         "role": "ai",
                         "content": ai_response
                     })
-                    
-                    # Play AI response audio
-                    ai_audio = speak_gtts(maybe_translate(ai_response, playback_lang), playback_lang)
-                    if ai_audio:
-                        play_audio_js(ai_audio)
                 
                 # Clear status and rerun to show updated conversation
                 status_container.empty()
@@ -830,10 +779,24 @@ elif mode == "Roleplay":
             else:
                 st.warning("I couldn't hear you clearly. Please try recording again.")
     
-    elif st.session_state.rp_step >= 10:
-        # Roleplay completed
-        st.success("🎉 Roleplay Complete!")
-        st.markdown("### Great job finishing the roleplay!")
+    # Check if roleplay should complete (moved outside audio processing block)
+    if st.session_state.rp_questions and st.session_state.rp_step >= 10 and not st.session_state.rp_stop_requested:
+        # Save the final conversation to history before completing
+        if st.session_state.rp_conversation_turns:
+            st.session_state.rp_conversation_history.append({
+                "question_number": st.session_state.rp_step,
+                "conversation": st.session_state.rp_conversation_turns.copy()
+            })
+            st.session_state.rp_conversation_turns = []  # Clear for completion display
+        
+        st.balloons()
+        completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
+        st.success(completion_text)
+        
+        # Play completion audio
+        final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
+        if final_audio:
+            play_audio_js(final_audio)
         
         # Show conversation summary
         if st.session_state.rp_conversation_history:
@@ -851,16 +814,19 @@ elif mode == "Roleplay":
                             st.markdown(f"**You:** {turn['content']}")
                     st.markdown("---")
         
-        # Restart button
-        if st.button("🔄 Start New Roleplay"):
-            st.session_state.rp_step = 0
-            st.session_state.rp_questions = []
-            st.session_state.rp_current_question = ""
-            st.session_state.rp_conversation_history = []
-            st.session_state.rp_stop_requested = False
-            st.session_state.rp_conversation_turns = []
-            st.session_state.rp_waiting_for_response = False
-            st.rerun()
+        # Manual restart button
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("🔄 Restart Roleplay", type="primary", help="Start a new roleplay session"):
+                st.session_state.rp_step = 0
+                st.session_state.rp_questions = []
+                st.session_state.rp_current_question = ""
+                st.session_state.rp_conversation_history = []
+                st.session_state.rp_stop_requested = False
+                st.session_state.rp_conversation_turns = []
+                st.session_state.rp_waiting_for_response = False
+                st.session_state.rp_auto_played = set()
+                st.rerun()
     
     elif st.session_state.rp_stop_requested:
         # Roleplay was stopped
@@ -869,6 +835,7 @@ elif mode == "Roleplay":
             st.session_state.rp_stop_requested = False
             st.session_state.rp_conversation_turns = []
             st.session_state.rp_waiting_for_response = False
+            st.session_state.rp_auto_played = set()
             st.rerun()
     
     else:
