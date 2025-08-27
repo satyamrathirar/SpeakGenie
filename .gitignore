@@ -1,0 +1,29 @@
+# Environment variables
+.env
+
+# Google Cloud service account credentials
+*.json
+aitutor-469916-b1bef1b7bb90.json
+
+# Streamlit secrets (local development)
+.streamlit/secrets.toml
+
+# Don't commit secrets.toml with real values
+secrets.toml
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
