@@ -28,35 +28,34 @@ except Exception:
 st.set_page_config(page_title="SpeakGenie", page_icon="🎙️", layout="centered")
 APP_TITLE = "🎙️ SpeakGenie: AI Voice Tutor"
 
+def initialize_session_state():
+    """Initialize all session state variables with their default values"""
+    session_defaults = {
+        # Chat-related variables
+        "chat_history": [],
+        "stop_response": False,
+        "last_audio_processed": None,
+        "audio_cache": {},
+        "chat_just_cleared": False,
+        
+        # Roleplay-related variables
+        "rp_step": 0,
+        "rp_key": "school",
+        "rp_questions": [],
+        "rp_current_question": "",
+        "rp_conversation_history": [],
+        "rp_stop_requested": False,
+        "rp_conversation_turns": [],
+        "rp_waiting_for_response": False,
+        "rp_auto_played": set()
+    }
+    
+    for key, default_value in session_defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value
+
 # Initialize session state variables
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "stop_response" not in st.session_state:
-    st.session_state.stop_response = False
-if "last_audio_processed" not in st.session_state:
-    st.session_state.last_audio_processed = None
-if "audio_cache" not in st.session_state:
-    st.session_state.audio_cache = {}
-if "chat_just_cleared" not in st.session_state:
-    st.session_state.chat_just_cleared = False
-if "rp_step" not in st.session_state:
-    st.session_state.rp_step = 0
-if "rp_key" not in st.session_state:
-    st.session_state.rp_key = "school"
-if "rp_questions" not in st.session_state:
-    st.session_state.rp_questions = []
-if "rp_current_question" not in st.session_state:
-    st.session_state.rp_current_question = ""
-if "rp_conversation_history" not in st.session_state:
-    st.session_state.rp_conversation_history = []
-if "rp_stop_requested" not in st.session_state:
-    st.session_state.rp_stop_requested = False
-if "rp_conversation_turns" not in st.session_state:
-    st.session_state.rp_conversation_turns = []
-if "rp_waiting_for_response" not in st.session_state:
-    st.session_state.rp_waiting_for_response = False
-if "rp_auto_played" not in st.session_state:
-    st.session_state.rp_auto_played = set()
+initialize_session_state()
 
 # Models / languages
 load_dotenv()
@@ -734,16 +733,6 @@ elif mode == "Roleplay":
                 st.session_state.rp_conversation_turns = []  # Reset conversation for next question
                 st.session_state.rp_auto_played = set()  # Reset auto-play tracking for next question
                 
-                # Check if roleplay should complete after moving to next step
-                if st.session_state.rp_step >= 10:
-                    st.balloons()
-                    completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
-                    st.success(completion_text)
-                    
-                    # Play completion audio
-                    final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
-                    if final_audio:
-                        play_audio_js(final_audio)
                 
                 st.rerun()
         
@@ -812,9 +801,13 @@ elif mode == "Roleplay":
     
     elif st.session_state.rp_step >= 10:
         # Roleplay completed
+        st.balloons()
         st.success("🎉 Roleplay Complete!")
         st.markdown("### Great job finishing the roleplay!")
-        
+        completion_text = "Fantastic! You completed all 10 questions in this roleplay scenario! 🎉"
+        final_audio = speak_gtts(maybe_translate(completion_text, playback_lang), playback_lang)
+        if final_audio:
+            play_audio_js(final_audio)
         # Show conversation summary
         if st.session_state.rp_conversation_history:
             with st.expander("📝 View Conversation Summary"):
@@ -878,12 +871,5 @@ elif mode == "Roleplay":
         
         st.info("👆 Choose a scenario above to start your interactive roleplay with 10 questions!")
     
-
-
-        
-        
-
 st.markdown("---")
-st.caption(
-    "reserved-for-caption"
-)
+
