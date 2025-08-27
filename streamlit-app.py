@@ -89,6 +89,19 @@ def load_roleplay_scenarios():
         st.error(f"Error loading roleplay scenarios: Invalid JSON format - {e}")
         return None
 
+def load_roleplay_prompt_template():
+    """Load the roleplay prompt template from external file"""
+    try:
+        with open('roleplay_prompt_template.txt', 'r', encoding='utf-8') as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        st.error("Error: roleplay_prompt_template.txt file not found")
+        st.info("Please create the roleplay_prompt_template.txt file to customize question generation prompts.")
+        return None
+    except Exception as e:
+        st.error(f"Error loading prompt template: {e}")
+        return None
+
 @st.cache_resource(show_spinner=False)
 
 def init_gemini():
@@ -114,29 +127,16 @@ def generate_roleplay_questions(model, scenario_key: str, scenario_context: str)
             return []
         return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
     
-    prompt = f"""
-    Generate exactly 10 simple, child-friendly questions for a roleplay scenario about "{scenario_context}".
+    # Load the prompt template from external file
+    prompt_template = load_roleplay_prompt_template()
+    if prompt_template is None:
+        # If template file is not found, try fallback questions
+        fallback_questions = load_fallback_questions()
+        if fallback_questions is None:
+            return []
+        return fallback_questions.get(scenario_key, fallback_questions.get("school", []))
     
-    Requirements:
-    - Questions should be appropriate for children aged 6-16
-    - Use simple vocabulary and short sentences
-    - Questions should flow naturally in conversation
-    - at school, questions should be from the perspective of a teacher, at the store, it should be from the perspective of a cashier and at home, it should be from the perspective of a parent or guardian
-    - Avoid using slang or overly complex language
-    - Avoid asking for personal information like full names, addresses, or phone numbers
-    - Make questions engaging and fun
-    - Start with a greeting question
-    - End with a positive closing question
-    
-    Format: Return only the questions, one per line, numbered 1-10.
-    
-    Example for school scenario:
-    1. Good morning! What's your name?
-    2. What grade are you in?
-    3. What's your favorite subject?
-    
-    Now generate for: {scenario_context}
-    """
+    prompt = prompt_template.format(scenario_context=scenario_context)
     
     try:
         response = model.generate_content(prompt)

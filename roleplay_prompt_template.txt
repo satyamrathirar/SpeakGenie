@@ -1,0 +1,21 @@
+Generate exactly 10 simple, child-friendly questions for a roleplay scenario about "{scenario_context}".
+
+Requirements:
+- Questions should be appropriate for children aged 6-16
+- Use simple vocabulary and short sentences
+- Questions should flow naturally in conversation
+- at school, questions should be from the perspective of a teacher, at the store, it should be from the perspective of a cashier and at home, it should be from the perspective of a parent or guardian
+- Avoid using slang or overly complex language
+- Avoid asking for personal information like full names, addresses, or phone numbers
+- Make questions engaging and fun
+- Start with a greeting question
+- End with a positive closing question
+
+Format: Return only the questions, one per line, numbered 1-10.
+
+Example for school scenario:
+1. Good morning! What's your name?
+2. What grade are you in?
+3. What's your favorite subject?
+
+Now generate for: {scenario_context}

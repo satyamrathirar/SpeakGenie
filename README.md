@@ -64,10 +64,13 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. **Set up environment variables**
+4. **Set up configuration files**
 ```bash
 cp .env.example .env
 # Edit .env file and add your Google AI Studio API key
+
+# The roleplay_prompt_template.txt file is already included
+# Optional: Customize it to match your teaching style and requirements
 ```
 
 Required environment variables:
@@ -119,6 +122,41 @@ Customize scenarios by editing `roleplay_scenarios.json`:
   }
 }
 ```
+
+### Customizing Question Generation Prompts
+**🎨 NEW**: Customize how the AI generates roleplay questions by editing the prompt template:
+
+1. **Create/Edit** `roleplay_prompt_template.txt` in the main directory
+2. **Customize** the template to match your teaching style and requirements
+3. **Use placeholder** `{scenario_context}` where you want the scenario name inserted
+
+**Example template structure:**
+```
+Generate exactly 10 simple, child-friendly questions for a roleplay scenario about "{scenario_context}".
+
+Requirements:
+- Questions should be appropriate for children aged 6-16
+- Use simple vocabulary and short sentences
+- [Add your custom requirements here]
+
+Format: Return only the questions, one per line, numbered 1-10.
+
+Example for school scenario:
+1. Good morning! What's your name?
+2. What grade are you in?
+3. What's your favorite subject?
+
+Now generate for: {scenario_context}
+```
+
+**📖 For detailed customization guide**, see `roleplay_prompt_template_README.md`
+
+**Benefits of customization:**
+- 🎯 **Target specific age groups** (e.g., 3-6 years vs 12-18 years)
+- 📝 **Adjust vocabulary complexity** and sentence structure
+- 🌍 **Add cultural context** or regional variations
+- 🛡️ **Modify safety guidelines** for your specific needs
+- 🎭 **Change role perspectives** (teacher, parent, friend, etc.)
 
 ### Fallback Questions
 Edit `roleplay_questions.json` to provide backup questions when AI generation fails:
