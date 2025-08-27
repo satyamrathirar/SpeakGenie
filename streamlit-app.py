@@ -59,7 +59,7 @@ initialize_session_state()
 
 # Models / languages
 load_dotenv()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")  # default is 1.5 flash, if not specified in .env
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or st.secrets.get("GEMINI_MODEL", "gemini-1.5-flash")  # Support both .env and Streamlit secrets
 SUPPORTED_LANGS = ["English", "Hindi", "Marathi", "Tamil"]
 LANG_CODE = {"English": "en", "Hindi": "hi", "Marathi": "mr", "Tamil": "ta"}
 
