@@ -393,8 +393,6 @@ recorded_bytes = None
 # Main logic
 if mode == "Free Chat":
     st.subheader("I will solve all your doubts!")
-    
-    status_container = st.empty()
 
     # Chat history
     chat_container = st.container()
@@ -437,6 +435,9 @@ if mode == "Free Chat":
             if st.button("🗑️ Clear Audio Cache", help="Clear cached audio files"):
                 st.session_state.audio_cache = {}
                 st.success("Audio cache cleared!")
+    
+    # Status container positioned just above the input form
+    status_container = st.empty()
     
     # Text input chat box
     with st.form("chat_form", clear_on_submit=True):
