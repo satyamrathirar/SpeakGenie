@@ -181,14 +181,29 @@ def generate_roleplay_questions(model, scenario_key: str, scenario_context: str)
 # Whisper Transcription Helper
 def transcribe_whisper(audio_bytes: bytes, lang_code: str = "en") -> str:
     """Transcribe audio using OpenAI Whisper. Accepts bytes, returns text."""
-    # Save to temp WAV file
     try:
+        # First try using pydub with FFmpeg
         audio = AudioSegment.from_file(io.BytesIO(audio_bytes))
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
             audio.export(tmp.name, format="wav")
             model = whisper.load_model("base")  # available models: "tiny", "base", "small", "medium", "large"
             result = model.transcribe(tmp.name, language=lang_code)
             return result.get("text", "").strip() or "(No speech detected)"
+    except FileNotFoundError as e:
+        if "ffprobe" in str(e) or "ffmpeg" in str(e):
+            # FFmpeg not available - try alternative approach
+            try:
+                # Direct audio processing without AudioSegment
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=True) as tmp:
+                    tmp.write(audio_bytes)
+                    tmp.flush()
+                    model = whisper.load_model("base")
+                    result = model.transcribe(tmp.name, language=lang_code)
+                    return result.get("text", "").strip() or "(No speech detected)"
+            except Exception as e2:
+                return f"(Audio processing unavailable: FFmpeg required for audio conversion. Error: {e2})"
+        else:
+            return f"(Transcription error: {e})"
     except Exception as e:
         return f"(Transcription error: {e})"
 
